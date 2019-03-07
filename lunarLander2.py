@@ -10,31 +10,22 @@ import numpy as np
 import gym
 from collections import deque
 import random
-
-epsilon = 0.95 #Explore vs exploit
-#Do I need to use entropy in loss function???
-#Should I use tanh as activation function??
-#Could add alpha - learning rate param to Adam optimizer
-#callbacks = [tf.keras.callbacks.TensorBoard(log_dir='./logs')] - add to fit method
+import csv
+import datetime
 
 class LunarLander:
 
     def __init__(self, env):
 
+        self.training_start = datetime.datetime.now()
         self.env = env
-        self.experiences = deque(maxlen = 100000)
-        self.experiences = deque()
-        self.history = kc.History()
-
-        # self.tensorboard = kc.TensorBoard(log_dir='./logs')
-        # print(env.observation_space)
-        # print(env.action_space)
+        self.experiences = deque(maxlen = 10000)
 
         #Hyperparameters
         self.alpha = 0.0001
-        self.gamma = 0.85
+        self.gamma = 0.99
         self.epsilon = 1.0
-        self.epsilon_decay_rate = 0.995
+        self.epsilon_decay_rate = 0.998
         self.tau = 0.125
 
         self.model = self.build_model() #role of the model (self.model) is to do the actual predictions on what action to take
@@ -52,9 +43,9 @@ class LunarLander:
     #https://keras.io/getting-started/sequential-model-guide/
     def build_model(self):
         model = Sequential()
-        model.add(Dense(64, activation='relu', input_dim=8))
-        model.add(Dense(64, activation='relu'))
-        model.add(Dense(4))
+        model.add(Dense(256, activation='relu', input_dim=8))
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(4, activation='linear'))
 
         # model.add(Dense(64, use_bias=False, input_dim=8))
         # model.add(BatchNormalization())
@@ -68,7 +59,7 @@ class LunarLander:
 
     def learn_from_experiences(self):
         #take batch
-        batch_size = 64
+        batch_size = 32
 
         if batch_size > len(self.experiences):
             return
@@ -100,7 +91,7 @@ class LunarLander:
         self.target_model.set_weights(target_model_weights)
 
     def get_action(self, state):
-        if self.epsilon > 0.01:
+        if self.epsilon > 0.05:
             self.epsilon *= self.epsilon_decay_rate
 
         if np.random.random() < self.epsilon:
@@ -108,9 +99,45 @@ class LunarLander:
         else:
             return np.argmax(self.model.predict(state)[0])
 
-    # def save_weights(self,episode):
-    #     file_name = "lunarLander_"+str(episode)+".h5"
-    #     self.model.save_weights(file_name)
+    def save_weights(self,avg_reward_last_hundred):
+        file_name = "lunarLander_"+str(avg_reward_last_hundred)+".h5"
+        self.model.save_weights(file_name)
+
+
+def log_csv(lunar_lander, episode_rewards,hundred_ep_reward_avgs,episode_lengths):
+    file_name = 'Logs/Log_' + str(lunar_lander.training_start) + '.csv'
+    episode_rewards_length = len(episode_rewards)
+    hundred_ep_reward_avgs_length = len(hundred_ep_reward_avgs)
+    episode_lengths_length = len(episode_lengths)
+    
+    with open(file_name, mode='w') as log_file:
+        log_writer = csv.writer(log_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        log_writer.writerow(['Episodes = '+str(len(episode_rewards)),
+            'alpha='+str(lunar_lander.alpha),
+            'gamma='+str(lunar_lander.gamma),
+            'epsilon='+str(lunar_lander.epsilon),
+            'epsilon_decay_rate='+str(lunar_lander.epsilon_decay_rate),
+            'tau='+str(lunar_lander.tau),
+            'batch=32'
+            '64relu/64relu/linear',
+            'Adam opt',
+            'Loss mse'])
+
+        log_writer.writerow(['episode_rewards','hundred_ep_reward_avgs','episode_lengths'])
+
+        for i in range(episode_rewards_length):
+            next_row = []
+
+            next_row.append(episode_rewards[i])
+            if i<hundred_ep_reward_avgs_length:
+                next_row.append(hundred_ep_reward_avgs[i])
+
+            if i<episode_lengths_length:
+                next_row.append(episode_lengths[i])
+
+            log_writer.writerow(next_row)
+
+
 
 
 
@@ -125,54 +152,82 @@ done = False
 lunar_lander = LunarLander(env)
 
 episode_rewards = []
+hundred_ep_reward_avgs = []
+episode_lengths = []
 
-episodes = 5000
-episode_length = 1000
+episodes = 2000
+episode_length = 500
 
-# kc.TensorBoard(log_dir='./logs')
+avg_reward_last_hundred = 0
 
 for i in range(episodes):
+
     episode_reward = 0
     state = env.reset().reshape(1,8)
+
     for j in range(episode_length):
 
-        env.render()
+        # env.render()
 
-        action = lunar_lander.get_action(state)
+        # action = lunar_lander.get_action(state)
+        action = env.action_space.sample()
         next_state, reward, done, info = env.step(action)
         episode_reward += reward
 
         next_state = next_state.reshape(1,8)
         lunar_lander.store_experience(state, next_state, reward, done, action)
-        lunar_lander.learn_from_experiences()
-        lunar_lander.update_target_model_weights()
+
+        if j%10 == 0:
+            lunar_lander.learn_from_experiences()
+            lunar_lander.update_target_model_weights()
 
         state = next_state
 
         if done:
+            episode_lengths.append(j)
             break
 
     episode_rewards.append(episode_reward)
 
+    if i%10 == 0:
+        plt.figure(1)
+        plt.clf()
+        plt.plot(episode_rewards)
+        plt.title('Episode Rewards')
+        plt.ylabel('Reward')
+        plt.xlabel('Episode')
 
-    # if i%10 == 0:
-    plt.clf()
-    plt.plot(episode_rewards)
-    plt.title('Episode Rewards')
-    plt.ylabel('Reward')
-    plt.xlabel('Episode')
-    plt.show(block=False)
-    plt.pause(0.001)
+        plt.figure(2)
+        plt.clf()
+        plt.plot(hundred_ep_reward_avgs)
+        plt.title('Previous 100 Episodes Avg Rewards')
+        plt.ylabel('Reward')
+        plt.xlabel('Measurements')
 
-    # avg_reward_last_ten = sum(episode_rewards[len(episode_rewards)-10:])/10
-    # print("Average reward over last ten episodes: ",avg_reward_last_ten)
+        plt.figure(3)
+        plt.clf()
+        plt.plot(episode_lengths)
+        plt.title('Episode Lengths')
+        plt.ylabel('Timesteps')
+        plt.xlabel('Episode')
 
-    # if avg_reward_last_ten > 200 or i%100==0:
-    #     lunar_lander.save_weights(i)
+        plt.show(block=False)
+        plt.pause(0.001)
+
+        if i>100:
+            avg_reward_last_hundred = sum(episode_rewards[i-100:])/100
+            print("Average reward over last hundred episodes: ",avg_reward_last_hundred)
+            hundred_ep_reward_avgs.append(avg_reward_last_hundred)
+
+            if avg_reward_last_hundred > 200:
+                lunar_lander.save_weights(avg_reward_last_hundred)
+                # i = episodes
+
+        log_csv(lunar_lander,episode_rewards,hundred_ep_reward_avgs,episode_lengths)
 
     # if i ==0:
     #     lunar_lander.save_weights(i)
 
-    print("episode: ",i," Reward= ",episode_reward)
+    print("episode: ",i,"\tReward= ",episode_reward,"\tPrevious Hundred Episode Reward= ",avg_reward_last_hundred)
 
       # lunar_lander.store_experience(experience,action)
