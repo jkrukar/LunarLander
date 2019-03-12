@@ -1,6 +1,6 @@
 from keras.models import Model,Sequential
 from keras.layers import Dense, Input, BatchNormalization, Activation
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 from keras.layers.merge import Add
 import keras.backend as kb
 import keras.callbacks as kc
@@ -25,8 +25,8 @@ class LunarLander:
         self.alpha = 0.0001
         self.gamma = 0.99
         self.epsilon = 1.0
-        self.epsilon_decay_rate = 0.998
-        self.tau = 0.125
+        self.epsilon_decay_rate = 0.9
+        self.tau = 0.2
 
         self.model = self.build_model() #role of the model (self.model) is to do the actual predictions on what action to take
         self.target_model = self.build_model() #target model (self.target_model) tracks what action we want our model to take.
@@ -43,8 +43,8 @@ class LunarLander:
     #https://keras.io/getting-started/sequential-model-guide/
     def build_model(self):
         model = Sequential()
-        model.add(Dense(256, activation='relu', input_dim=8))
-        model.add(Dense(128, activation='relu'))
+        model.add(Dense(128, activation='relu', input_dim=8))
+        model.add(Dense(64, activation='relu'))
         model.add(Dense(4, activation='linear'))
 
         # model.add(Dense(64, use_bias=False, input_dim=8))
@@ -59,7 +59,7 @@ class LunarLander:
 
     def learn_from_experiences(self):
         #take batch
-        batch_size = 32
+        batch_size = 128
 
         if batch_size > len(self.experiences):
             return
@@ -118,8 +118,8 @@ def log_csv(lunar_lander, episode_rewards,hundred_ep_reward_avgs,episode_lengths
             'epsilon='+str(lunar_lander.epsilon),
             'epsilon_decay_rate='+str(lunar_lander.epsilon_decay_rate),
             'tau='+str(lunar_lander.tau),
-            'batch=32'
-            '64relu/64relu/linear',
+            'batch=128',
+            '128relu/128relu/linear',
             'Adam opt',
             'Loss mse'])
 
@@ -155,7 +155,7 @@ episode_rewards = []
 hundred_ep_reward_avgs = []
 episode_lengths = []
 
-episodes = 2000
+episodes = 5000
 episode_length = 500
 
 avg_reward_last_hundred = 0
@@ -169,8 +169,8 @@ for i in range(episodes):
 
         # env.render()
 
-        # action = lunar_lander.get_action(state)
-        action = env.action_space.sample()
+        action = lunar_lander.get_action(state)
+        # action = env.action_space.sample()
         next_state, reward, done, info = env.step(action)
         episode_reward += reward
 
@@ -190,12 +190,12 @@ for i in range(episodes):
     episode_rewards.append(episode_reward)
 
     if i%10 == 0:
-        plt.figure(1)
-        plt.clf()
-        plt.plot(episode_rewards)
-        plt.title('Episode Rewards')
-        plt.ylabel('Reward')
-        plt.xlabel('Episode')
+        # plt.figure(1)
+        # plt.clf()
+        # plt.plot(episode_rewards)
+        # plt.title('Episode Rewards')
+        # plt.ylabel('Reward')
+        # plt.xlabel('Episode')
 
         plt.figure(2)
         plt.clf()
@@ -204,12 +204,12 @@ for i in range(episodes):
         plt.ylabel('Reward')
         plt.xlabel('Measurements')
 
-        plt.figure(3)
-        plt.clf()
-        plt.plot(episode_lengths)
-        plt.title('Episode Lengths')
-        plt.ylabel('Timesteps')
-        plt.xlabel('Episode')
+        # plt.figure(3)
+        # plt.clf()
+        # plt.plot(episode_lengths)
+        # plt.title('Episode Lengths')
+        # plt.ylabel('Timesteps')
+        # plt.xlabel('Episode')
 
         plt.show(block=False)
         plt.pause(0.001)
